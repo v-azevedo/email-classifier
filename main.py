@@ -78,11 +78,22 @@ async def upload_file(file: UploadFile):
         logger.error(f"File upload failed: {str(e)}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
+@app.delete('/')
+async def delete_file(file_id: str):
+    try:
+        file_path = file_store[file_id]
+        
+        os.remove(file_path)
+
+    except Exception as e:
+        logger.error(f"Error while deleting file: {str(e)}")
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
 # Route responsible for extracting the text from the pdf/txt file and call the LLM api to request a classification and reply
 @app.get('/classify')
 async def upload_info(file_id: str):
     file_path = file_store[file_id]
-    
+
     try:
         if file_id not in file_store:
             raise HTTPException(status_code=404, detail="File not found")
@@ -114,7 +125,7 @@ async def upload_info(file_id: str):
 
         return JSONResponse(content={'classification': classification, 'reply': reply}, status_code=200)        
     except Exception as e:
-        logger.error(f"Header extraction failed: {str(e)}")
+        logger.error(f"Error while classifying: {str(e)}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
     finally:
         os.remove(file_path)
