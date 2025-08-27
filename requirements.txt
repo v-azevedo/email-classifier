@@ -2,3 +2,4 @@ fastapi[standard]==0.116.1
 pydantic==2.11.7
 python-multipart==0.0.20
 google-genai==1.31.0
+pypdf==6.0.0
