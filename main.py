@@ -81,11 +81,12 @@ async def upload_file(file: UploadFile):
 # Route responsible for extracting the text from the pdf/txt file and call the LLM api to request a classification and reply
 @app.get('/classify')
 async def upload_info(file_id: str):
+    file_path = file_store[file_id]
+    
     try:
         if file_id not in file_store:
             raise HTTPException(status_code=404, detail="File not found")
 
-        file_path = file_store[file_id];
         extracted_email = ""
 
         # Checks if the file stored is a pdf or txt file
@@ -115,3 +116,5 @@ async def upload_info(file_id: str):
     except Exception as e:
         logger.error(f"Header extraction failed: {str(e)}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
+    finally:
+        os.remove(file_path)
