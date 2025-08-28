@@ -23,6 +23,9 @@ logger = logging.getLogger(__name__)
 class FileUpload(BaseModel):
     base64_string: str
 
+class Email(BaseModel):
+    text: str
+
 # Rate limiter storage and settings
 rate_limit_data: Dict[str, list] = defaultdict(list)
 RATE_LIMIT = 20
@@ -62,7 +65,7 @@ async def upload_file(file: UploadFile):
     try:
         file_id = str(uuid4())  # Generate unique file ID
         file_path = ""
-
+        
         if(file.content_type == 'application/pdf'):
             file_path = os.path.join(UPLOAD_FOLDER, f"{file_id}.pdf")
         else:
@@ -86,29 +89,43 @@ async def delete_file(file_id: str):
         os.remove(file_path)
 
     except Exception as e:
+        # Log and return error in case of failure
         logger.error(f"Error while deleting file: {str(e)}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 # Route responsible for extracting the text from the pdf/txt file and call the LLM api to request a classification and reply
 @app.get('/classify')
-async def upload_info(file_id: str):
-    file_path = file_store[file_id]
-
+async def upload_info(file_id: str | None = None, email: Email | None = None):
+    file_path = file_store[file_id] if file_id != None else ""
+    extracted_email = ""
+ 
     try:
-        if file_id not in file_store:
-            raise HTTPException(status_code=404, detail="File not found")
+        # Checks if either the stored file_id or a body request with the text was passed
+        if(not file_id and not email):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No parameters were found.")
 
-        extracted_email = ""
+        # Checks if there's already an email in text attached to the body of the request
+        if(email == None):
+            if file_id not in file_store:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
 
-        # Checks if the file stored is a pdf or txt file
-        if(file_path.find('.pdf') != -1):
-            reader = pypdf.PdfReader(file_path)
-            extracted_email = reader.pages[0].extract_text()
+            # Checks if the file stored is a pdf or txt file
+            if(file_path.find('.pdf') != -1):
+                reader = pypdf.PdfReader(file_path)
+                extracted_email = reader.pages[0].extract_text()
+            else:
+                with open(file_path, 'rt') as output_file:
+                    extracted_email = output_file.read()
+                    
+            # Delete stored pdf/txt after finished using
+            os.remove(file_path)
         else:
-            with open(file_path, 'rt') as output_file:
-                extracted_email = output_file.read()
+            if(email.text.strip() == ""):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing populated text field.")
 
-        # Calls the LLM api to request a generative text content based on the input from the extracted text
+            extracted_email = email.text
+
+        # Calls the LLM API to request a generative text content based on the input from the extracted email text
         response = client.models.generate_content(
              model="gemini-2.5-flash", contents="Only return the classification for the following email text as Productive or Unproductive(create an appropriate response for the sender with no line breaks): " + extracted_email
         )
@@ -127,5 +144,4 @@ async def upload_info(file_id: str):
     except Exception as e:
         logger.error(f"Error while classifying: {str(e)}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
-    finally:
-        os.remove(file_path)
+        
