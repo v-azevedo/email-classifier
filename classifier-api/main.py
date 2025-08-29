@@ -7,13 +7,10 @@ from google import genai
 from typing import Dict
 import tempfile
 import pypdf
-import logging
 import os
 
 app = FastAPI()
 client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
-
-logger = logging.getLogger(__name__)
 
 class FileUpload(BaseModel):
     base64_string: str
@@ -62,7 +59,8 @@ async def upload_info(file: UploadFile | None = None, email: Email | None = None
 
         if(file != None):
             suffix = '.pdf' if file.content_type == "application/pdf" else ".txt"
-
+            
+            # With tempfile lib, check what type of file was uploaded and handle accordingly
             with tempfile.NamedTemporaryFile(suffix=suffix) as output_file:
                 output_file.write(await file.read())
                 file_name = output_file.name
@@ -73,7 +71,7 @@ async def upload_info(file: UploadFile | None = None, email: Email | None = None
                 else:
                     output_file.seek(0)
                     extracted_email = output_file.read().decode()
-                    
+                
         elif(email != None):
             if(email.text.strip() == ""):
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing populated text field.")
@@ -100,6 +98,5 @@ async def upload_info(file: UploadFile | None = None, email: Email | None = None
 
         return JSONResponse(content={'classification': classification, 'reply': reply}, status_code=status.HTTP_200_OK)
     except HTTPException as e:
-        logger.error(f"Error while classifying: {str(e)}")
         return JSONResponse(content={"error": e.detail}, status_code=e.status_code)
         
