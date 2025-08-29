@@ -12,11 +12,29 @@ import os
 app = FastAPI()
 client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
 
-class FileUpload(BaseModel):
-    base64_string: str
-
 class Email(BaseModel):
     text: str
+
+# Calls the LLM API to request a generative text content based on the input from the extracted email text
+def llm_request(input: str):
+    response = client.models.generate_content(
+            model="gemini-2.5-flash", contents="Only return the classification for the following email text as Productive or Unproductive(create an appropriate response for the sender with no line breaks): " 
+            + input
+    )
+    
+    if(response.text == None):
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error getting response for AI model server.") 
+
+    # Checks if the either the productive or unproductive are present in the llm output and pass to the classification var
+    if "Productive" in response.text:
+        classification = "Productive"
+    else:
+        classification = "Unproductive"
+
+    # Cuts from the llm response text the classification leaving only the reply
+    reply = response.text[len(classification):len(response.text)]
+
+    return classification, reply
 
 # Rate limiter storage and settings
 rate_limit_data: Dict[str, list] = defaultdict(list)
@@ -52,51 +70,44 @@ async def add_rate_limit(request: Request, call_next):
     return response
 
 # Route responsible for extracting the text from the pdf/txt file and call the LLM api to request a classification and reply
-@app.get('/classify')
-async def upload_info(file: UploadFile | None = None, email: Email | None = None):
+@app.post("/classify-upload")
+async def upload_file(file: UploadFile | None = None):
     try:
-        extracted_email = ""
-
-        if(file != None):
-            suffix = '.pdf' if file.content_type == "application/pdf" else ".txt"
-            
-            # With tempfile lib, check what type of file was uploaded and handle accordingly
-            with tempfile.NamedTemporaryFile(suffix=suffix) as output_file:
-                output_file.write(await file.read())
-                file_name = output_file.name
-
-                if(file_name.find('.pdf') != -1):
-                    reader = pypdf.PdfReader(output_file)
-                    extracted_email = reader.pages[0].extract_text()
-                else:
-                    output_file.seek(0)
-                    extracted_email = output_file.read().decode()
-                
-        elif(email != None):
-            if(email.text.strip() == ""):
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing populated text field.")
-            extracted_email = email.text
-        else: 
+        if(file == None):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No data was passed, try again to either upload or input the text to be classified.")
-
-        # Calls the LLM API to request a generative text content based on the input from the extracted email text
-        response = client.models.generate_content(
-             model="gemini-2.5-flash", contents="Only return the classification for the following email text as Productive or Unproductive(create an appropriate response for the sender with no line breaks): " + extracted_email
-        )
         
-        if(response.text == None):
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error getting response for AI model server.") 
+        extracted_email = ""
+        suffix = '.pdf' if file.content_type == "application/pdf" else ".txt"
+        
+        # With tempfile lib, check what type of file was uploaded and handle accordingly
+        with tempfile.NamedTemporaryFile(suffix=suffix) as output_file:
+            output_file.write(await file.read())
+            file_name = output_file.name
 
-        # Checks if the either the productive or unproductive are present in the llm output and pass to the classification var
-        if "Productive" in response.text:
-            classification = "Productive"
-        else:
-            classification = "Unproductive"
-
-        # Cuts from the llm response text the classification leaving only the reply
-        reply = response.text[len(classification):len(response.text)]
+            if(file_name.find('.pdf') != -1):
+                reader = pypdf.PdfReader(output_file)
+                extracted_email = reader.pages[0].extract_text()
+            else:
+                output_file.seek(0)
+                extracted_email = output_file.read().decode()
+            
+            classification, reply = llm_request(extracted_email)
 
         return JSONResponse(content={'classification': classification, 'reply': reply}, status_code=status.HTTP_200_OK)
     except HTTPException as e:
         return JSONResponse(content={"error": e.detail}, status_code=e.status_code)
+
+# Route from direct text input from json body
+@app.post("/classify-text")
+async def upload_email(email: Email | None = None):
+    try:
+        if(email == None):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No email was passed, please try again.")
+        if(not email.text.strip()):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing populated text field.")
         
+        classification, reply = llm_request(email.text)
+
+        return JSONResponse(content={'classification': classification, 'reply': reply}, status_code=status.HTTP_200_OK)
+    except HTTPException as e:
+        return JSONResponse(content={"error": e.detail}, status_code=e.status_code)
