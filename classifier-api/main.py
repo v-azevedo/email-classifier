@@ -5,18 +5,13 @@ from collections import defaultdict
 from pydantic import BaseModel
 from google import genai
 from typing import Dict
-from uuid import uuid4
+import tempfile
 import pypdf
 import logging
 import os
 
 app = FastAPI()
 client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
-
-UPLOAD_FOLDER = 'uploads'
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-file_store : Dict[str, str] = {}
 
 logger = logging.getLogger(__name__)
 
@@ -59,89 +54,52 @@ async def add_rate_limit(request: Request, call_next):
         response = JSONResponse(status_code=e.status_code, content={"detail": e.detail})
     return response
 
-# Route responsible for the upload of pdf/txt files
-@app.post('/upload')
-async def upload_file(file: UploadFile):
-    try:
-        file_id = str(uuid4())  # Generate unique file ID
-        file_path = ""
-        
-        if(file.content_type == 'application/pdf'):
-            file_path = os.path.join(UPLOAD_FOLDER, f"{file_id}.pdf")
-        else:
-            file_path = os.path.join(UPLOAD_FOLDER, f"{file_id}.txt")
-
-        with open(file_path, 'wb') as output_file:
-            output_file.write(await file.read())
-
-        file_store[file_id] = file_path  # Store file path
-        return JSONResponse(content={"file_id": file_id, "file_path": file_path}, status_code=200)
-    except Exception as e:
-        # Log and return error in case of failure
-        logger.error(f"File upload failed: {str(e)}")
-        return JSONResponse(content={"error": str(e)}, status_code=500)
-
-@app.delete('/')
-async def delete_file(file_id: str):
-    try:
-        file_path = file_store[file_id]
-        
-        os.remove(file_path)
-
-    except Exception as e:
-        # Log and return error in case of failure
-        logger.error(f"Error while deleting file: {str(e)}")
-        return JSONResponse(content={"error": str(e)}, status_code=500)
-
 # Route responsible for extracting the text from the pdf/txt file and call the LLM api to request a classification and reply
 @app.get('/classify')
-async def upload_info(file_id: str | None = None, email: Email | None = None):
-    file_path = file_store[file_id] if file_id != None else ""
-    extracted_email = ""
- 
+async def upload_info(file: UploadFile | None = None, email: Email | None = None):
     try:
-        # Checks if either the stored file_id or a body request with the text was passed
-        if(not file_id and not email):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No parameters were found.")
+        extracted_email = ""
 
-        # Checks if there's already an email in text attached to the body of the request
-        if(email == None):
-            if file_id not in file_store:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
+        if(file != None):
+            suffix = '.pdf' if file.content_type == "application/pdf" else ".txt"
 
-            # Checks if the file stored is a pdf or txt file
-            if(file_path.find('.pdf') != -1):
-                reader = pypdf.PdfReader(file_path)
-                extracted_email = reader.pages[0].extract_text()
-            else:
-                with open(file_path, 'rt') as output_file:
-                    extracted_email = output_file.read()
+            with tempfile.NamedTemporaryFile(suffix=suffix) as output_file:
+                output_file.write(await file.read())
+                file_name = output_file.name
+
+                if(file_name.find('.pdf') != -1):
+                    reader = pypdf.PdfReader(output_file)
+                    extracted_email = reader.pages[0].extract_text()
+                else:
+                    output_file.seek(0)
+                    extracted_email = output_file.read().decode()
                     
-            # Delete stored pdf/txt after finished using
-            os.remove(file_path)
-        else:
+        elif(email != None):
             if(email.text.strip() == ""):
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing populated text field.")
-
             extracted_email = email.text
+        else: 
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No data was passed, try again to either upload or input the text to be classified.")
 
         # Calls the LLM API to request a generative text content based on the input from the extracted email text
         response = client.models.generate_content(
              model="gemini-2.5-flash", contents="Only return the classification for the following email text as Productive or Unproductive(create an appropriate response for the sender with no line breaks): " + extracted_email
         )
-
+        
         if(response.text == None):
-            raise HTTPException(status_code=500, detail="Error getting response for AI model server.") 
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error getting response for AI model server.") 
 
+        # Checks if the either the productive or unproductive are present in the llm output and pass to the classification var
         if "Productive" in response.text:
             classification = "Productive"
         else:
             classification = "Unproductive"
 
+        # Cuts from the llm response text the classification leaving only the reply
         reply = response.text[len(classification):len(response.text)]
 
-        return JSONResponse(content={'classification': classification, 'reply': reply}, status_code=200)        
-    except Exception as e:
+        return JSONResponse(content={'classification': classification, 'reply': reply}, status_code=status.HTTP_200_OK)
+    except HTTPException as e:
         logger.error(f"Error while classifying: {str(e)}")
-        return JSONResponse(content={"error": str(e)}, status_code=500)
+        return JSONResponse(content={"error": e.detail}, status_code=e.status_code)
         
