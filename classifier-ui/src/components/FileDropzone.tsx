@@ -29,6 +29,7 @@ const FileDropzone = ({ loading, file, onFileUpload }: Props) => {
     },
     disabled: loading || (!!fileAccepted && !!file),
     maxFiles: 1,
+    maxSize: 2 * 1024 * 1024, // 2MB in bytes
   });
 
   return (
@@ -55,9 +56,11 @@ const FileDropzone = ({ loading, file, onFileUpload }: Props) => {
             <p className="font-quicksand-600">{fileAccepted}</p>
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-2">
+          <div className="flex flex-col items-center gap-2 font-quicksand-400">
             <IoCloudUpload className="size-16" />
             <p className="font-quicksand-600">Choose a file or drag it here!</p>
+            <p className="text-sm text-gray-400">Supported files: PDF, TXT</p>
+            <p className="text-sm text-gray-400">Max size: 2MB</p>
           </div>
         )}
       </div>

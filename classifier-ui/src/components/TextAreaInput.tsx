@@ -11,6 +11,7 @@ const TextAreaInput = ({ onChange, value }: Props) => {
         placeholder="Input your text here..."
         value={value}
         onChange={(input) => onChange(input.currentTarget.value)}
+        maxLength={10000}
       />
     </div>
   );
