@@ -1,4 +1,5 @@
 from fastapi import FastAPI, UploadFile, HTTPException, status, Request
+from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timedelta
 from fastapi.responses import JSONResponse
 from collections import defaultdict
@@ -12,14 +13,26 @@ import os
 app = FastAPI()
 client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
 
+origins = [
+    "https://email-classifier-t597.onrender.com"
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 class Email(BaseModel):
     text: str
 
 # Calls the LLM API to request a generative text content based on the input from the extracted email text
 def llm_request(input: str):
     response = client.models.generate_content(
-            model="gemini-2.5-flash", contents="Only return the classification for the following email text as Productive or Unproductive(create an appropriate response for the sender with no line breaks): " 
-            + input
+        model="gemini-2.5-flash", contents="Only return the classification for the following email text as Productive or Unproductive(create an appropriate response for the sender with no line breaks): " 
+        + input
     )
     
     if(response.text == None):
@@ -97,7 +110,7 @@ async def upload_file(file: UploadFile | None = None):
     except HTTPException as e:
         return JSONResponse(content={"error": e.detail}, status_code=e.status_code)
 
-# Route from direct text input from json body
+# Route for direct text input from json body
 @app.post("/classify-text")
 async def upload_email(email: Email | None = None):
     try:
