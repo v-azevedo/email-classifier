@@ -14,8 +14,7 @@ app = FastAPI()
 client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
 
 origins = [
-    "https://email-classifier-t597.onrender.com",
-    "http://email-classifier-t597.onrender.com",
+    "https://classifyai.onrender.com/",
     "http://localhost",
     "http://localhost:5000"
 ]
