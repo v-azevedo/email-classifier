@@ -34,7 +34,7 @@ const Classification = ({ classification, reply, loading, onReset }: Props) => {
             {reply && (
               <div className="font-quicksand-400 flex flex-col gap-5 mb-1">
                 <h1 className="text-center font-quicksand-700 text-primary text-xl">Reply</h1>
-                <p className="text-xl tracking-wide">{reply}</p>
+                <p className="text-xl">{reply}</p>
               </div>
             )}
           </>
