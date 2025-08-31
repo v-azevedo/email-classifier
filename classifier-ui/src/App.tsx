@@ -22,6 +22,8 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [response, setResponse] = useState<ResultType>();
 
+  const url = import.meta.env.PROD ? import.meta.env.VITE_PROD_URL : import.meta.env.VITE_DEV_URL;
+
   const handleFile = (file: File) => {
     setFile(file);
   };
@@ -36,10 +38,9 @@ function App() {
       setIsLoading(true);
 
       if (file) {
-        data = (await axios.postForm("https://email-classifier-t597.onrender.com/classify-upload", { file: file }))
-          .data;
+        data = (await axios.postForm(`${url}/classify-upload`, { file: file })).data;
       } else if (input) {
-        data = (await axios.post("https://email-classifier-t597.onrender.com/classify-text", { text: input })).data;
+        data = (await axios.post(`${url}/classify-text`, { text: input })).data;
       }
 
       if (data) {
