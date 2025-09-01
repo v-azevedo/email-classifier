@@ -32,13 +32,13 @@ While ClassifyAI is a powerful tool, it does have some limitations:
    npm install
    ```
 
-3. **Set Up Environment Variables API**: Create a `.env` file in the `classifier-api` directory and add your OpenAI API key:
+3. **Set Up Environment Variables API**: Create a `.env` file in the `classifier-api` directory and add your Gemini API key:
 
    ```plaintext
    GEMINI_API_KEY=your_gemini_api_key
    ```
 
-4. **Set Up Environment Variables UI**: Create a `.env` file in the `classifier-ui` directory and add your OpenAI API key:
+4. **Set Up Environment Variables UI**: Create a `.env` file in the `classifier-ui` directory and add your DEV_URL for the API:
 
    ```plaintext
     VITE_PROD_URL=hosted_url
